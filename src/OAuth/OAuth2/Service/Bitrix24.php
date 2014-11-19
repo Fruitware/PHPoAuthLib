@@ -2,6 +2,7 @@
 
 namespace OAuth\OAuth2\Service;
 
+use OAuth\OAuth2\Service\Exception\MissingRefreshTokenException;
 use OAuth\OAuth2\Token\StdOAuth2Token;
 use OAuth\Common\Http\Exception\TokenResponseException;
 use OAuth\Common\Http\Uri\Uri;
@@ -9,6 +10,7 @@ use OAuth\Common\Consumer\CredentialsInterface;
 use OAuth\Common\Http\Client\ClientInterface;
 use OAuth\Common\Storage\TokenStorageInterface;
 use OAuth\Common\Http\Uri\UriInterface;
+use OAuth\Common\Token\TokenInterface;
 
 class Bitrix24 extends AbstractService
 {
@@ -71,9 +73,45 @@ class Bitrix24 extends AbstractService
         return $token;
     }
 
-    /**
-     * {@inheritdoc}
-     */
+    public function refreshAccessToken(TokenInterface $token)
+    {
+        $refreshToken = $token->getRefreshToken();
+
+        if (empty($refreshToken)) {
+            throw new MissingRefreshTokenException();
+        }
+
+        $responseBody = $this->httpClient->retrieveResponse(
+            $this->getRefreshTokenUri($refreshToken),
+            array(),
+            $this->getExtraOAuthHeaders(),
+            'GET'
+        );
+        $token = $this->parseAccessTokenResponse($responseBody);
+        $this->storage->storeAccessToken($this->service(), $token);
+
+        return $token;
+    }
+
+    public function getRefreshTokenUri($refreshToken)
+    {
+        $parameters = array(
+            'grant_type'    => 'refresh_token',
+            'type'          => 'web_server',
+            'client_id'     => $this->credentials->getConsumerId(),
+            'client_secret' => $this->credentials->getConsumerSecret(),
+            'refresh_token' => $refreshToken,
+        );
+
+        // Build the url
+        $url = clone $this->getAccessTokenEndpoint();
+        foreach ($parameters as $key => $val) {
+            $url->addToQuery($key, $val);
+        }
+
+        return $url;
+    }
+
     public function getAccessTokenUri($code)
     {
         $parameters = array(
